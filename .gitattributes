@@ -1,0 +1,6 @@
+* text=auto
+
+*.ttf binary
+*.cpp text
+*.h text
+*.md text

@@ -1,0 +1,23 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# Windows
+x64/
+x86/
+*.user
+*.aps
+
+# Compiled output
+*.obj
+*.pdb
+*.lib
+*.exp
