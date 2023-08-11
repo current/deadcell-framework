@@ -1,135 +1,108 @@
-<div align="center">
+# deadcell menu
 
-# Deadcell Menu
+imgui foundation for the deadcell menu. this is a pinned snapshot of
+[dear imgui](https://github.com/ocornut/imgui) (`1.89.5-wip`) — everything the
+menu draws, from the window frames down to the sliders and tabs, goes through
+this code and out the back into dx11.
 
-**Vendored Dear ImGui foundation for the Deadcell menu concept.**
+the tree is vendored on purpose, not pulled as a submodule:
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Language](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
-![Dear ImGui](https://img.shields.io/badge/Dear%20ImGui-1.89.5--WIP-8A2BE2)
-![Build](https://img.shields.io/badge/build-CMake-064F8C?logo=cmake&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20DX11-0078D6?logo=windows&logoColor=white)
+- builds can't break because something moved upstream. the revision the menu
+  compiles against is the one sitting in the repo, always.
+- custom widgets lean on `imgui_internal.h`, and that header shifts a lot.
+  pinning it means it can't get pulled out from under us mid-development.
+- upstream fixes get cherry-picked when we want them, not when they show up
+  with six months of unrelated churn attached.
 
-</div>
-
-## Overview
-
-This repository pins a self-contained snapshot of [Dear ImGui](https://github.com/ocornut/imgui)
-(`1.89.5-WIP`) that serves as the rendering/UI layer for the **Deadcell** menu
-concept. The tree is vendored rather than pulled as a submodule so that the
-exact revision the menu is built against is always known, builds never depend
-on network state, and upstream breaking changes can be evaluated on our own
-schedule.
-
-The primary targets are **Win32** (platform and input) paired with
-**Direct3D 11** (rendering); the remaining upstream backends are kept in-tree
-for reference and future portability work.
-
-## Why vendored?
-
-- **Reproducible builds** — the dependency is committed, not resolved at
-  configure time.
-- **Stable ABI surface** — internal ImGui APIs (`imgui_internal.h`) are used
-  heavily by custom widgets; a pinned snapshot guarantees they don't shift
-  underneath us.
-- **Patching freedom** — upstream fixes can be cherry-picked as needed
-  without dragging in unrelated churn.
-
-## Repository layout
+## what's in here
 
 ```
-.
-├── imgui.cpp               # Core: context, windows, ID stack, layout
-├── imgui.h                 # Public API
-├── imgui_internal.h        # Internal API (custom widgets live here)
-├── imgui_draw.cpp          # Rendering: vertex buffers, font atlas, primitives
-├── imgui_widgets.cpp       # Widgets: sliders, combo boxes, trees, tabs, ...
-├── imgui_tables.cpp        # Table API
-├── imgui_demo.cpp          # Reference implementations for every widget
-├── imconfig.h              # Compile-time configuration
-├── backends/               # Platform + renderer backends
-│   ├── imgui_impl_win32.*  # Win32 message loop / raw input (primary)
-│   ├── imgui_impl_dx11.*   # Direct3D 11 renderer (primary)
-│   └── ...                 # DX9/10/12, OpenGL, Vulkan, SDL, GLFW, ...
-├── misc/                   # Fonts, freetype binding, std::string helpers,
-│   └── debuggers/          #   .natvis / .gdb helpers
-├── docs/                   # Upstream documentation (FAQ, FONTS, BACKENDS...)
-└── CMakeLists.txt          # Builds imgui as a static library
+imgui.cpp             core — context, windows, id stack, input, layout
+imgui.h               public api
+imgui_internal.h      internal api, the one custom widgets actually need
+imgui_draw.cpp        vertex buffers, font atlas, antialiased primitives
+imgui_widgets.cpp     sliders, combos, trees, tabs, all the stock widgets
+imgui_tables.cpp      table api
+imgui_demo.cpp        live sample of every widget, with source. read it.
+imconfig.h            compile-time toggles
+backends/             platform + renderer backends (see below)
+misc/                 fonts, freetype, std::string helpers, .natvis files
+docs/                 upstream docs — faq and BACKENDS.md are the good ones
+CMakeLists.txt        builds imgui as a static lib
 ```
 
-## Core architecture
+## how it works
 
-Dear ImGui is an **immediate-mode** GUI library: there is no retained widget
-tree or saved state per widget. Every frame the application calls
-`ImGui::NewFrame()`, issues widget calls, and calls `ImGui::Render()`, which
-produces a vertex/index buffer that a backend draws. State is keyed by widget
-**ID** (derived from labels and pushed ID scopes), which makes dynamic UIs
-trivial to express.
+imgui is immediate mode. there's no widget tree and no per-widget state
+hanging around between frames — you call `NewFrame()`, issue your widget
+calls, call `Render()`, and out comes a vertex/index buffer a backend shoves
+into the gpu. every frame. that's the whole trick, and it's why dynamic uis
+(quick-loading configs, iterating over a vector of features) are one-liners
+instead of bookkeeping.
 
-| File | Responsibility |
+widget identity comes from labels plus whatever's on the id stack, so two
+`InputInt` calls in a loop don't collide as long as you push an id per item.
+mostly you never think about it. sometimes you do, and that's what
+`imgui_internal.h` is for.
+
+| file | does |
 | --- | --- |
-| `imgui.cpp` | Context lifecycle, window management, ID stack, input routing, layout |
-| `imgui_draw.cpp` | Draw-list generation, font atlas rasterization, anti-aliased primitives |
-| `imgui_widgets.cpp` | All stock widgets built on top of the core |
-| `imgui_tables.cpp` | Column/table API with freezing, sorting, resizable columns |
-| `imgui_internal.h` | Internal API — required for custom widgets and advanced theming |
-| `imconfig.h` | Compile-time options (asserts, calling conventions, types) |
+| `imgui.cpp` | windows, id stack, input routing, layout |
+| `imgui_draw.cpp` | draw lists, font atlas rasterization |
+| `imgui_widgets.cpp` | stock widgets, built on the core |
+| `imgui_tables.cpp` | tables — scroll, sort, freeze, resize |
+| `imgui_internal.h` | internals: custom widgets, theming hooks |
 
-## Backends
+## backends
 
-Backends come in two flavors and are combined freely:
+two kinds, mix and match:
 
-- **Platform backends** feed input (mouse, keyboard, time, display size) and
-  own the swapchain window — `imgui_impl_win32` is the one used here.
-- **Renderer backends** translate ImGui's draw data into GPU calls —
-  `imgui_impl_dx11` is the one used here.
+- **platform** — feeds input and owns the window. win32 here.
+  `ImGui_ImplWin32_WndProcHandler` goes in your wndproc and input just works.
+- **renderer** — turns draw data into gpu calls. dx11 here.
 
-Both compile into the `imgui` static library target; an application links
-against it, calls the two `*_Impl_*` `Init` functions, and owns the frame
-loop.
+win32 + dx11 is the pair that actually gets exercised. everything else in
+`backends/` (dx9/10/12, opengl, vulkan, sdl2/sdl3, glfw, metal...) is vendored
+as-is for reference — fine to compile against, just not battle-tested on this
+snapshot.
 
-## Building
+both primaries compile straight into the `imgui` static target, and the
+dx11 side links `d3d11`/`dxgi`/`dwmapi` on its own when building on windows.
 
-Requires CMake ≥ 3.16 and a C++17 compiler.
+## building
 
-```sh
+cmake >= 3.16, c++17 compiler:
+
+```
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-On Windows the DX11 backend links against `d3d11`, `dxgi`, and `dwmapi`
-automatically.
+## wiring it up
 
-## Integration
-
-Minimal frame loop once the Win32/DX11 device is set up:
+once you've got a device and a window:
 
 ```cpp
 ImGui::CreateContext();
 ImGui_ImplWin32_Init(hwnd);
-ImGui_ImplDX11_Init(device, deviceContext);
+ImGui_ImplDX11_Init(device, device_context);
 
-// per frame
+// frame loop
 ImGui_ImplDX11_NewFrame();
 ImGui_ImplWin32_NewFrame();
 ImGui::NewFrame();
 
-ImGui::Begin("Deadcell");
-ImGui::Text("Menu concept");
+ImGui::Begin("deadcell");
+// menu contents
 ImGui::End();
 
 ImGui::Render();
 ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 ```
 
-## Documentation
+that's it. no scene graph, no callbacks to register.
 
-Upstream documentation ships in [`docs/`](docs/) — the
-[FAQ](docs/FAQ.md) and [BACKENDS](docs/BACKENDS.md) pages are the most
-useful. `imgui_demo.cpp` contains a live sample of every widget.
+## license
 
-## License
-
-Dear ImGui is Copyright (c) 2014–2023 Omar Cornut, licensed under the MIT
-license — see [LICENSE](LICENSE). This repository redistributes an unmodified
-snapshot; all modifications to the menu itself live in downstream projects.
+mit, © omar cornut — see [LICENSE](LICENSE). this is an unmodified snapshot of
+upstream; the menu itself lives in downstream code.
