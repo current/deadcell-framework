@@ -102,6 +102,12 @@ ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
 that's it. no scene graph, no callbacks to register.
 
+## versions
+
+snapshot tracks `1.89.5-wip` (pre-1.89.5 master). when moving up a version:
+diff the core sources against the upstream tag and re-verify the win32/dx11
+path first — everything else is untested anyway.
+
 ## license
 
 mit, © omar cornut — see [LICENSE](LICENSE). this is an unmodified snapshot of
